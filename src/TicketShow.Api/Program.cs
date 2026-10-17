@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using TicketShow.Api.Middlewares;
 using TicketShow.Application;
@@ -85,10 +86,19 @@ app.UseCors("AllowAngularApp");
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Seed sample data if empty
+// Migrate database and seed sample data if empty
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    try
+    {
+        await dbContext.Database.MigrateAsync();
+    }
+    catch (Exception ex)
+    {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        logger.LogWarning(ex, "Could not apply automatic migration on startup (Database may not be running yet).");
+    }
     await DatabaseSeeder.SeedAsync(dbContext);
 }
 

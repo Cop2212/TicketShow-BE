@@ -38,6 +38,16 @@ public class CheckInController : BaseApiController
     }
 
     /// <summary>
+    /// Đồng bộ hàng loạt lượt quét vé từ App soát vé Offline khi có mạng trở lại
+    /// </summary>
+    [HttpPost("sync-offline")]
+    public async Task<ActionResult<ApiResponse<BatchSyncResultDto>>> BatchSyncOffline([FromBody] BatchSyncCheckInCommand command)
+    {
+        var result = await Mediator.Send(command);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Thống kê soát vé thời gian thực của sự kiện
     /// </summary>
     [HttpGet("stats/{eventId}")]

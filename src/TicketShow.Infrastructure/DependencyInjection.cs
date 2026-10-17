@@ -19,7 +19,8 @@ public static class DependencyInjection
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
         services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(connectionString, b => b.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName)));
+            options.UseNpgsql(connectionString, b => b.MigrationsAssembly(typeof(AppDbContext).Assembly.FullName))
+                   .UseSnakeCaseNamingConvention());
 
         services.AddScoped<IAppDbContext>(provider => provider.GetRequiredService<AppDbContext>());
 
@@ -28,6 +29,8 @@ public static class DependencyInjection
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddSingleton<ILockService, RedisLockService>();
         services.AddSingleton<IQrSignatureService, QrSignatureService>();
+        services.AddScoped<IEmailService, EmailService>();
+        services.AddHostedService<EventSalesAutoCloserWorker>();
 
         // JWT Authentication
         var jwtSection = configuration.GetSection(JwtSettings.SectionName);

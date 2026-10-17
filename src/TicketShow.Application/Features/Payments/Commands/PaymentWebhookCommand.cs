@@ -38,12 +38,18 @@ public class PaymentWebhookCommandHandler : IRequestHandler<PaymentWebhookComman
     private readonly IAppDbContext _context;
     private readonly IQrSignatureService _qrService;
     private readonly ILockService _lockService;
+    private readonly IEmailService _emailService;
 
-    public PaymentWebhookCommandHandler(IAppDbContext context, IQrSignatureService qrService, ILockService lockService)
+    public PaymentWebhookCommandHandler(
+        IAppDbContext context,
+        IQrSignatureService qrService,
+        ILockService lockService,
+        IEmailService emailService)
     {
         _context = context;
         _qrService = qrService;
         _lockService = lockService;
+        _emailService = emailService;
     }
 
     public async Task<ApiResponse<PaymentProcessResultDto>> Handle(PaymentWebhookCommand request, CancellationToken cancellationToken)
@@ -171,9 +177,48 @@ public class PaymentWebhookCommandHandler : IRequestHandler<PaymentWebhookComman
 
         await _context.SaveChangesAsync(cancellationToken);
 
+        // Release Redis locks since seats are now marked Sold permanently in SQL
+        foreach (var seat in lockedSeats)
+        {
+            await _lockService.ReleaseSeatLockAsync(seat.EventId, seat.Id, order.OrderCode);
+        }
+
+        // Send E-ticket Email to customer
+        var firstSeat = lockedSeats.FirstOrDefault();
+        var eventTitle = firstSeat?.Event?.Title ?? "TicketShow Event";
+        var venueName = firstSeat?.Event?.VenueName ?? "Venue";
+        var startTime = firstSeat?.Event?.StartTime ?? DateTime.UtcNow;
+
+        var ticketEmailItems = generatedTickets.Select(t => (
+            TicketCode: t.TicketCode,
+            TierName: t.TierName,
+            SeatLabel: t.SeatLabel,
+            QrBase64: t.QrCodeBase64Image
+        )).ToList();
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _emailService.SendETicketEmailAsync(
+                    order.CustomerEmail,
+                    order.CustomerName,
+                    order.OrderCode,
+                    eventTitle,
+                    venueName,
+                    startTime,
+                    ticketEmailItems
+                );
+            }
+            catch
+            {
+                // Best-effort email delivery
+            }
+        });
+
         return ApiResponse<PaymentProcessResultDto>.Ok(
             new PaymentProcessResultDto(order.OrderCode, "PAID", order.TransactionId, generatedTickets),
-            "Xử lý thanh toán thành công và đã xuất E-ticket gắn mã QR bảo mật."
+            "Xử lý thanh toán thành công và đã xuất E-ticket gắn mã QR bảo mật gửi qua Email."
         );
     }
 }

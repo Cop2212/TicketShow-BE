@@ -25,7 +25,7 @@ public class AppDbContext : DbContext, IAppDbContext
         // User
         modelBuilder.Entity<User>(entity =>
         {
-            entity.ToTable("Users");
+            entity.ToTable("users");
             entity.HasKey(u => u.Id);
             entity.HasIndex(u => u.Email).IsUnique();
             entity.Property(u => u.Email).IsRequired().HasMaxLength(150);
@@ -36,7 +36,7 @@ public class AppDbContext : DbContext, IAppDbContext
         // Event
         modelBuilder.Entity<Event>(entity =>
         {
-            entity.ToTable("Events");
+            entity.ToTable("events");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Slug).IsUnique();
             entity.Property(e => e.Title).IsRequired().HasMaxLength(255);
@@ -52,7 +52,7 @@ public class AppDbContext : DbContext, IAppDbContext
         // TicketTier
         modelBuilder.Entity<TicketTier>(entity =>
         {
-            entity.ToTable("TicketTiers");
+            entity.ToTable("ticket_types");
             entity.HasKey(t => t.Id);
             entity.Property(t => t.Name).IsRequired().HasMaxLength(100);
             entity.Property(t => t.Price).HasPrecision(18, 2);
@@ -69,9 +69,10 @@ public class AppDbContext : DbContext, IAppDbContext
         // Seat
         modelBuilder.Entity<Seat>(entity =>
         {
-            entity.ToTable("Seats");
+            entity.ToTable("seats");
             entity.HasKey(s => s.Id);
             entity.HasIndex(s => new { s.EventId, s.RowName, s.SeatNumber }).IsUnique();
+            entity.HasIndex(s => new { s.EventId, s.Status });
             entity.Property(s => s.RowName).IsRequired().HasMaxLength(10);
             entity.Property(s => s.SeatNumber).IsRequired().HasMaxLength(10);
 
@@ -89,9 +90,10 @@ public class AppDbContext : DbContext, IAppDbContext
         // Order
         modelBuilder.Entity<Order>(entity =>
         {
-            entity.ToTable("Orders");
+            entity.ToTable("orders");
             entity.HasKey(o => o.Id);
             entity.HasIndex(o => o.OrderCode).IsUnique();
+            entity.HasIndex(o => new { o.CustomerId, o.PaymentStatus });
             entity.Property(o => o.OrderCode).IsRequired().HasMaxLength(50);
             entity.Property(o => o.TotalAmount).HasPrecision(18, 2);
             entity.Property(o => o.CustomerName).IsRequired().HasMaxLength(100);
@@ -106,9 +108,11 @@ public class AppDbContext : DbContext, IAppDbContext
         // Ticket
         modelBuilder.Entity<Ticket>(entity =>
         {
-            entity.ToTable("Tickets");
+            entity.ToTable("tickets");
             entity.HasKey(t => t.Id);
             entity.HasIndex(t => t.TicketCode).IsUnique();
+            entity.HasIndex(t => new { t.EventId, t.Status });
+            entity.HasIndex(t => t.OrderId);
             entity.Property(t => t.TicketCode).IsRequired().HasMaxLength(50);
             entity.Property(t => t.QrCodeSignature).IsRequired();
 
@@ -141,8 +145,9 @@ public class AppDbContext : DbContext, IAppDbContext
         // CheckInLog
         modelBuilder.Entity<CheckInLog>(entity =>
         {
-            entity.ToTable("CheckInLogs");
+            entity.ToTable("check_in_logs");
             entity.HasKey(c => c.Id);
+            entity.HasIndex(c => c.TicketId);
 
             entity.HasOne(c => c.Ticket)
                 .WithMany(t => t.CheckInLogs)

@@ -28,6 +28,13 @@ public class OrdersController : BaseApiController
         return Ok(result);
     }
 
+    [HttpDelete("{orderCode}/cancel")]
+    public async Task<ActionResult<ApiResponse<bool>>> CancelReservation(string orderCode)
+    {
+        var result = await Mediator.Send(new CancelReservationCommand(orderCode));
+        return Ok(result);
+    }
+
     [HttpGet("{orderCode}")]
     public async Task<ActionResult<ApiResponse<object>>> GetOrderByCode(string orderCode)
     {

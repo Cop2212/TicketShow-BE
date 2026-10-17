@@ -31,9 +31,28 @@ public record OfflineTicketManifestDto(
     bool IsCheckedIn
 );
 
+public record OfflineCheckInItem(
+    string TicketCode,
+    DateTime ScannedAt,
+    string? Notes = null
+);
+
+public record BatchSyncCheckInCommand(
+    Guid EventId,
+    List<OfflineCheckInItem> Items
+) : IRequest<ApiResponse<BatchSyncResultDto>>;
+
+public record BatchSyncResultDto(
+    int TotalSubmitted,
+    int SuccessfullySynced,
+    int AlreadyCheckedInCount,
+    int NotFoundCount
+);
+
 public class CheckInHandlers :
     IRequestHandler<VerifyCheckInCommand, ApiResponse<CheckInResultDto>>,
-    IRequestHandler<GetOfflineManifestQuery, ApiResponse<List<OfflineTicketManifestDto>>>
+    IRequestHandler<GetOfflineManifestQuery, ApiResponse<List<OfflineTicketManifestDto>>>,
+    IRequestHandler<BatchSyncCheckInCommand, ApiResponse<BatchSyncResultDto>>
 {
     private readonly IAppDbContext _context;
     private readonly IQrSignatureService _qrService;
@@ -190,5 +209,69 @@ public class CheckInHandlers :
             .ToListAsync(cancellationToken);
 
         return ApiResponse<List<OfflineTicketManifestDto>>.Ok(tickets, "Đã đồng bộ danh sách vé sự kiện thành công.");
+    }
+
+    public async Task<ApiResponse<BatchSyncResultDto>> Handle(BatchSyncCheckInCommand request, CancellationToken cancellationToken)
+    {
+        var staffUserId = _currentUser.UserId;
+        var ticketCodes = request.Items.Select(i => i.TicketCode).Distinct().ToList();
+
+        var tickets = await _context.Tickets
+            .Where(t => t.EventId == request.EventId && ticketCodes.Contains(t.TicketCode))
+            .ToListAsync(cancellationToken);
+
+        int success = 0;
+        int already = 0;
+        int notFound = 0;
+
+        foreach (var item in request.Items)
+        {
+            var ticket = tickets.FirstOrDefault(t => t.TicketCode == item.TicketCode);
+            if (ticket == null)
+            {
+                notFound++;
+                continue;
+            }
+
+            if (ticket.Status == TicketStatus.CheckedIn)
+            {
+                already++;
+                _context.CheckInLogs.Add(new CheckInLog
+                {
+                    TicketId = ticket.Id,
+                    ScannedByUserId = staffUserId,
+                    Status = CheckInStatus.AlreadyUsed,
+                    Message = $"Offline Batch Sync: vé đã được check-in trước đó. Quét offline lúc {item.ScannedAt:HH:mm:ss}",
+                    ScannedAt = item.ScannedAt
+                });
+                continue;
+            }
+
+            ticket.Status = TicketStatus.CheckedIn;
+            ticket.CheckedInAt = item.ScannedAt;
+            ticket.CheckedByStaffId = staffUserId;
+
+            _context.CheckInLogs.Add(new CheckInLog
+            {
+                TicketId = ticket.Id,
+                ScannedByUserId = staffUserId,
+                Status = CheckInStatus.Success,
+                Message = $"Offline Batch Sync thành công. Quét offline lúc {item.ScannedAt:HH:mm:ss}",
+                ScannedAt = item.ScannedAt
+            });
+
+            success++;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var result = new BatchSyncResultDto(
+            TotalSubmitted: request.Items.Count,
+            SuccessfullySynced: success,
+            AlreadyCheckedInCount: already,
+            NotFoundCount: notFound
+        );
+
+        return ApiResponse<BatchSyncResultDto>.Ok(result, $"Đồng bộ thành công {success}/{request.Items.Count} vé quét ngoại tuyến.");
     }
 }
