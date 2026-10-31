@@ -12,6 +12,12 @@ public interface IAppDbContext
     DbSet<Order> Orders { get; }
     DbSet<Ticket> Tickets { get; }
     DbSet<CheckInLog> CheckInLogs { get; }
+    DbSet<Role> Roles { get; }
+    DbSet<Permission> Permissions { get; }
+    DbSet<RolePermission> RolePermissions { get; }
+    DbSet<Menu> Menus { get; }
+    DbSet<RoleMenu> RoleMenus { get; }
+    DbSet<UserRoleMapping> UserRoles { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

@@ -16,4 +16,5 @@ public class User : BaseEntity
 
     public ICollection<Order> Orders { get; set; } = new List<Order>();
     public ICollection<Event> OrganizedEvents { get; set; } = new List<Event>();
+    public ICollection<UserRoleMapping> UserRoles { get; set; } = new List<UserRoleMapping>();
 }

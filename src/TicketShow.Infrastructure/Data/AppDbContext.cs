@@ -17,6 +17,12 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<CheckInLog> CheckInLogs => Set<CheckInLog>();
+    public DbSet<Role> Roles => Set<Role>();
+    public DbSet<Permission> Permissions => Set<Permission>();
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+    public DbSet<Menu> Menus => Set<Menu>();
+    public DbSet<RoleMenu> RoleMenus => Set<RoleMenu>();
+    public DbSet<UserRoleMapping> UserRoles => Set<UserRoleMapping>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -158,6 +164,98 @@ public class AppDbContext : DbContext, IAppDbContext
                 .WithMany()
                 .HasForeignKey(c => c.ScannedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Role
+        modelBuilder.Entity<Role>(entity =>
+        {
+            entity.ToTable("roles");
+            entity.HasKey(r => r.Id);
+            entity.HasIndex(r => r.Code).IsUnique();
+            entity.Property(r => r.Code).IsRequired().HasMaxLength(50);
+            entity.Property(r => r.Name).IsRequired().HasMaxLength(100);
+            entity.Property(r => r.Description).HasMaxLength(255);
+        });
+
+        // Permission
+        modelBuilder.Entity<Permission>(entity =>
+        {
+            entity.ToTable("permissions");
+            entity.HasKey(p => p.Id);
+            entity.HasIndex(p => p.Code).IsUnique();
+            entity.Property(p => p.Code).IsRequired().HasMaxLength(100);
+            entity.Property(p => p.Name).IsRequired().HasMaxLength(150);
+            entity.Property(p => p.Module).IsRequired().HasMaxLength(50);
+        });
+
+        // RolePermission
+        modelBuilder.Entity<RolePermission>(entity =>
+        {
+            entity.ToTable("role_permissions");
+            entity.HasKey(rp => rp.Id);
+            entity.HasIndex(rp => new { rp.RoleId, rp.PermissionId }).IsUnique();
+
+            entity.HasOne(rp => rp.Role)
+                .WithMany(r => r.RolePermissions)
+                .HasForeignKey(rp => rp.RoleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(rp => rp.Permission)
+                .WithMany(p => p.RolePermissions)
+                .HasForeignKey(rp => rp.PermissionId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Menu
+        modelBuilder.Entity<Menu>(entity =>
+        {
+            entity.ToTable("menus");
+            entity.HasKey(m => m.Id);
+            entity.Property(m => m.Title).IsRequired().HasMaxLength(100);
+            entity.Property(m => m.RoutePath).IsRequired().HasMaxLength(150);
+            entity.Property(m => m.Icon).HasMaxLength(50);
+            entity.Property(m => m.PermissionCode).HasMaxLength(100);
+
+            entity.HasOne(m => m.Parent)
+                .WithMany(m => m.Children)
+                .HasForeignKey(m => m.ParentId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // RoleMenu
+        modelBuilder.Entity<RoleMenu>(entity =>
+        {
+            entity.ToTable("role_menus");
+            entity.HasKey(rm => rm.Id);
+            entity.HasIndex(rm => new { rm.RoleId, rm.MenuId }).IsUnique();
+
+            entity.HasOne(rm => rm.Role)
+                .WithMany(r => r.RoleMenus)
+                .HasForeignKey(rm => rm.RoleId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(rm => rm.Menu)
+                .WithMany(m => m.RoleMenus)
+                .HasForeignKey(rm => rm.MenuId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // UserRoleMapping
+        modelBuilder.Entity<UserRoleMapping>(entity =>
+        {
+            entity.ToTable("user_roles");
+            entity.HasKey(ur => ur.Id);
+            entity.HasIndex(ur => new { ur.UserId, ur.RoleId }).IsUnique();
+
+            entity.HasOne(ur => ur.User)
+                .WithMany(u => u.UserRoles)
+                .HasForeignKey(ur => ur.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(ur => ur.Role)
+                .WithMany(r => r.UserRoles)
+                .HasForeignKey(ur => ur.RoleId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 
