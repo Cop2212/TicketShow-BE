@@ -20,6 +20,67 @@ public class OrdersController : BaseApiController
         _currentUser = currentUser;
         _qrService = qrService;
     }
+    /// <summary>
+    /// Lấy danh sách tất cả các đơn đặt vé (Dành cho Quản trị viên & Ban tổ chức)
+    /// </summary>
+    [HttpGet]
+    public async Task<ActionResult<ApiResponse<List<object>>>> GetOrders(
+        [FromQuery] string? search = null,
+        [FromQuery] Domain.Enums.PaymentStatus? status = null,
+        [FromQuery] Guid? eventId = null)
+    {
+        var query = _context.Orders
+            .Include(o => o.Tickets)
+                .ThenInclude(t => t.Seat)
+            .Include(o => o.Tickets)
+                .ThenInclude(t => t.Event)
+            .Include(o => o.Tickets)
+                .ThenInclude(t => t.TicketTier)
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (status.HasValue)
+        {
+            query = query.Where(o => o.PaymentStatus == status.Value);
+        }
+
+        if (eventId.HasValue)
+        {
+            query = query.Where(o => o.Tickets.Any(t => t.EventId == eventId.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.ToLower().Trim();
+            query = query.Where(o => o.OrderCode.ToLower().Contains(s) ||
+                                     o.CustomerName.ToLower().Contains(s) ||
+                                     o.CustomerEmail.ToLower().Contains(s));
+        }
+
+        var list = await query
+            .OrderByDescending(o => o.CreatedAt)
+            .Select(o => new
+            {
+                o.Id,
+                o.OrderCode,
+                o.CustomerName,
+                o.CustomerEmail,
+                o.CustomerPhone,
+                o.TotalAmount,
+                PaymentStatus = o.PaymentStatus.ToString(),
+                o.PaymentGateway,
+                o.TransactionId,
+                o.ExpiresAt,
+                o.CreatedAt,
+                TicketsCount = o.Tickets.Count,
+                EventTitle = o.Tickets.Select(t => t.Event != null ? t.Event.Title : null).FirstOrDefault(),
+                Seats = o.Tickets.Select(t => t.Seat != null ? $"{t.Seat.RowName}{t.Seat.SeatNumber}" : "GA").ToList()
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<List<object>>.Ok(list.Cast<object>().ToList(), "Lấy danh sách đơn đặt vé thành công."));
+    }
+
 
     [HttpPost("reserve-seats")]
     public async Task<ActionResult<ApiResponse<ReservationResultDto>>> ReserveSeats([FromBody] ReserveSeatsCommand command)

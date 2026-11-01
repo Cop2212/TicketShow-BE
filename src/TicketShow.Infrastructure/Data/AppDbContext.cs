@@ -17,6 +17,8 @@ public class AppDbContext : DbContext, IAppDbContext
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<CheckInLog> CheckInLogs => Set<CheckInLog>();
+    public DbSet<Venue> Venues => Set<Venue>();
+    public DbSet<VenueBooking> VenueBookings => Set<VenueBooking>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Permission> Permissions => Set<Permission>();
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
@@ -53,8 +55,57 @@ public class AppDbContext : DbContext, IAppDbContext
                 .WithMany(u => u.OrganizedEvents)
                 .HasForeignKey(e => e.OrganizerId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(e => e.Venue)
+                .WithMany(v => v.Events)
+                .HasForeignKey(e => e.VenueId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            entity.HasOne(e => e.VenueBooking)
+                .WithOne(b => b.Event)
+                .HasForeignKey<Event>(e => e.VenueBookingId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
+        // Venue
+        modelBuilder.Entity<Venue>(entity =>
+        {
+            entity.ToTable("venues");
+            entity.HasKey(v => v.Id);
+            entity.HasIndex(v => v.Slug).IsUnique();
+            entity.HasIndex(v => v.OwnerId);
+            entity.Property(v => v.Name).IsRequired().HasMaxLength(255);
+            entity.Property(v => v.Slug).IsRequired().HasMaxLength(255);
+            entity.Property(v => v.Address).IsRequired().HasMaxLength(500);
+            entity.Property(v => v.City).IsRequired().HasMaxLength(100);
+            entity.Property(v => v.MasterLayoutJson).IsRequired();
+
+            entity.HasOne(v => v.Owner)
+                .WithMany(u => u.OwnedVenues)
+                .HasForeignKey(v => v.OwnerId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // VenueBooking
+        modelBuilder.Entity<VenueBooking>(entity =>
+        {
+            entity.ToTable("venue_bookings");
+            entity.HasKey(b => b.Id);
+            entity.HasIndex(b => b.BookingCode).IsUnique();
+            entity.HasIndex(b => new { b.VenueId, b.StartTime, b.EndTime, b.Status });
+            entity.Property(b => b.BookingCode).IsRequired().HasMaxLength(50);
+            entity.Property(b => b.PriceQuote).HasPrecision(18, 2);
+
+            entity.HasOne(b => b.Venue)
+                .WithMany(v => v.Bookings)
+                .HasForeignKey(b => b.VenueId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(b => b.Organizer)
+                .WithMany(u => u.VenueBookings)
+                .HasForeignKey(b => b.OrganizerId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
         // TicketTier
         modelBuilder.Entity<TicketTier>(entity =>
         {

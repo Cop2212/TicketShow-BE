@@ -12,6 +12,8 @@ public interface IAppDbContext
     DbSet<Order> Orders { get; }
     DbSet<Ticket> Tickets { get; }
     DbSet<CheckInLog> CheckInLogs { get; }
+    DbSet<Venue> Venues { get; }
+    DbSet<VenueBooking> VenueBookings { get; }
     DbSet<Role> Roles { get; }
     DbSet<Permission> Permissions { get; }
     DbSet<RolePermission> RolePermissions { get; }

@@ -42,7 +42,12 @@ public record EventSummaryDto(
     DateTime SalesStartTime,
     DateTime SalesEndTime,
     EventStatus Status,
-    List<TicketTierDto> TicketTiers
+    List<TicketTierDto> TicketTiers,
+    Guid? VenueId = null,
+    Guid? VenueBookingId = null,
+    bool IsSeated = true,
+    Guid OrganizerId = default,
+    string OrganizerName = "N/A"
 );
 
 public record EventDetailDto(
@@ -59,7 +64,12 @@ public record EventDetailDto(
     DateTime SalesEndTime,
     EventStatus Status,
     List<TicketTierDto> TicketTiers,
-    List<SeatDto> Seats
+    List<SeatDto> Seats,
+    Guid? VenueId = null,
+    Guid? VenueBookingId = null,
+    bool IsSeated = true,
+    Guid OrganizerId = default,
+    string OrganizerName = "N/A"
 );
 
 public record CreateTicketTierInput(
@@ -67,6 +77,12 @@ public record CreateTicketTierInput(
     decimal Price,
     int TotalQuantity,
     string ColorHex
+);
+
+public record ZonePricingInput(
+    string ZoneName,
+    decimal Price,
+    string? ColorHex = null
 );
 
 public record CreateEventCommand : IRequest<ApiResponse<EventDetailDto>>
@@ -81,9 +97,31 @@ public record CreateEventCommand : IRequest<ApiResponse<EventDetailDto>>
     public DateTime SalesStartTime { get; init; }
     public DateTime SalesEndTime { get; init; }
     public List<CreateTicketTierInput> TicketTiers { get; init; } = new();
-    public int? GenerateRowsCount { get; init; } // e.g. 5 rows (A..E)
-    public int? GenerateSeatsPerRow { get; init; } // e.g. 10 seats (1..10)
+    public int? GenerateRowsCount { get; init; }
+    public int? GenerateSeatsPerRow { get; init; }
+    public Guid? VenueId { get; init; }
+    public Guid? VenueBookingId { get; init; }
+    public bool IsSeated { get; init; } = true;
+    public EventStatus InitialStatus { get; init; } = EventStatus.Published;
 }
+
+public record CreateEventFromBookingCommand : IRequest<ApiResponse<EventDetailDto>>
+{
+    public Guid VenueBookingId { get; init; }
+    public string Title { get; init; } = string.Empty;
+    public string? Description { get; init; }
+    public string? BannerUrl { get; init; }
+    public DateTime SalesStartTime { get; init; }
+    public DateTime SalesEndTime { get; init; }
+    public List<ZonePricingInput> ZonePricings { get; init; } = new();
+    public bool SubmitForApproval { get; init; } = false;
+}
+
+public record SubmitEventForApprovalCommand(Guid EventId) : IRequest<ApiResponse<bool>>;
+
+public record ApproveEventCommand(Guid EventId, bool Approved, string? Reason = null) : IRequest<ApiResponse<bool>>;
+
+public record CloseEventSalesCommand(Guid EventId) : IRequest<ApiResponse<bool>>;
 
 public class CreateEventCommandValidator : AbstractValidator<CreateEventCommand>
 {

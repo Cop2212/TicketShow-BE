@@ -100,6 +100,10 @@ namespace TicketShow.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
 
+                    b.Property<bool>("IsSeated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_seated");
+
                     b.Property<Guid>("OrganizerId")
                         .HasColumnType("uuid")
                         .HasColumnName("organizer_id");
@@ -140,6 +144,14 @@ namespace TicketShow.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("venue_address");
 
+                    b.Property<Guid?>("VenueBookingId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_booking_id");
+
+                    b.Property<Guid?>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
                     b.Property<string>("VenueName")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -155,6 +167,13 @@ namespace TicketShow.Infrastructure.Migrations
                     b.HasIndex("Slug")
                         .IsUnique()
                         .HasDatabaseName("ix_events_slug");
+
+                    b.HasIndex("VenueBookingId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_events_venue_booking_id");
+
+                    b.HasIndex("VenueId")
+                        .HasDatabaseName("ix_events_venue_id");
 
                     b.ToTable("events", (string)null);
                 });
@@ -807,6 +826,165 @@ namespace TicketShow.Infrastructure.Migrations
                     b.ToTable("user_roles", (string)null);
                 });
 
+            modelBuilder.Entity("TicketShow.Domain.Entities.Venue", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("address");
+
+                    b.Property<string>("City")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("city");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("image_url");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("MasterLayoutJson")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("master_layout_json");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_id");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("slug");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<int>("TotalCapacity")
+                        .HasColumnType("integer")
+                        .HasColumnName("total_capacity");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_venues");
+
+                    b.HasIndex("OwnerId")
+                        .HasDatabaseName("ix_venues_owner_id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique()
+                        .HasDatabaseName("ix_venues_slug");
+
+                    b.ToTable("venues", (string)null);
+                });
+
+            modelBuilder.Entity("TicketShow.Domain.Entities.VenueBooking", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BookingCode")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("booking_code");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("end_time");
+
+                    b.Property<Guid?>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.Property<Guid>("OrganizerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organizer_id");
+
+                    b.Property<decimal>("PriceQuote")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("price_quote");
+
+                    b.Property<string>("RejectionReason")
+                        .HasColumnType("text")
+                        .HasColumnName("rejection_reason");
+
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("start_time");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_venue_bookings");
+
+                    b.HasIndex("BookingCode")
+                        .IsUnique()
+                        .HasDatabaseName("ix_venue_bookings_booking_code");
+
+                    b.HasIndex("OrganizerId")
+                        .HasDatabaseName("ix_venue_bookings_organizer_id");
+
+                    b.HasIndex("VenueId", "StartTime", "EndTime", "Status")
+                        .HasDatabaseName("ix_venue_bookings_venue_id_start_time_end_time_status");
+
+                    b.ToTable("venue_bookings", (string)null);
+                });
+
             modelBuilder.Entity("TicketShow.Domain.Entities.CheckInLog", b =>
                 {
                     b.HasOne("TicketShow.Domain.Entities.User", "ScannedByUser")
@@ -836,7 +1014,23 @@ namespace TicketShow.Infrastructure.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_events_users_organizer_id");
 
+                    b.HasOne("TicketShow.Domain.Entities.VenueBooking", "VenueBooking")
+                        .WithOne("Event")
+                        .HasForeignKey("TicketShow.Domain.Entities.Event", "VenueBookingId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_events_venue_bookings_venue_booking_id");
+
+                    b.HasOne("TicketShow.Domain.Entities.Venue", "Venue")
+                        .WithMany("Events")
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_events_venues_venue_id");
+
                     b.Navigation("Organizer");
+
+                    b.Navigation("Venue");
+
+                    b.Navigation("VenueBooking");
                 });
 
             modelBuilder.Entity("TicketShow.Domain.Entities.Menu", b =>
@@ -1004,6 +1198,39 @@ namespace TicketShow.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("TicketShow.Domain.Entities.Venue", b =>
+                {
+                    b.HasOne("TicketShow.Domain.Entities.User", "Owner")
+                        .WithMany("OwnedVenues")
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_venues_users_owner_id");
+
+                    b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("TicketShow.Domain.Entities.VenueBooking", b =>
+                {
+                    b.HasOne("TicketShow.Domain.Entities.User", "Organizer")
+                        .WithMany("VenueBookings")
+                        .HasForeignKey("OrganizerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_venue_bookings_users_organizer_id");
+
+                    b.HasOne("TicketShow.Domain.Entities.Venue", "Venue")
+                        .WithMany("Bookings")
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_venue_bookings_venues_venue_id");
+
+                    b.Navigation("Organizer");
+
+                    b.Navigation("Venue");
+                });
+
             modelBuilder.Entity("TicketShow.Domain.Entities.Event", b =>
                 {
                     b.Navigation("Seats");
@@ -1062,7 +1289,23 @@ namespace TicketShow.Infrastructure.Migrations
 
                     b.Navigation("OrganizedEvents");
 
+                    b.Navigation("OwnedVenues");
+
                     b.Navigation("UserRoles");
+
+                    b.Navigation("VenueBookings");
+                });
+
+            modelBuilder.Entity("TicketShow.Domain.Entities.Venue", b =>
+                {
+                    b.Navigation("Bookings");
+
+                    b.Navigation("Events");
+                });
+
+            modelBuilder.Entity("TicketShow.Domain.Entities.VenueBooking", b =>
+                {
+                    b.Navigation("Event");
                 });
 #pragma warning restore 612, 618
         }

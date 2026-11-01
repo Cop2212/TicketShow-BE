@@ -12,6 +12,14 @@ public class Event : BaseEntity
     public string Slug { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string? BannerUrl { get; set; }
+    public Guid? VenueId { get; set; }
+    public Venue? Venue { get; set; }
+
+    public Guid? VenueBookingId { get; set; }
+    public VenueBooking? VenueBooking { get; set; }
+
+    public bool IsSeated { get; set; } = true;
+
     public string VenueName { get; set; } = string.Empty;
     public string? VenueAddress { get; set; }
 

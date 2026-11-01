@@ -5,7 +5,8 @@ public enum UserRole
     Admin = 1,
     Organizer = 2,
     Staff = 3,
-    Customer = 4
+    Customer = 4,
+    VenueOwner = 5
 }
 
 public enum EventStatus
@@ -13,7 +14,25 @@ public enum EventStatus
     Draft = 1,
     Published = 2,
     Closed = 3,
-    Finished = 4
+    Finished = 4,
+    PendingApproval = 5,
+    Cancelled = 6
+}
+
+public enum VenueStatus
+{
+    Draft = 1,
+    PendingApproval = 2,
+    Approved = 3,
+    Suspended = 4
+}
+
+public enum VenueBookingStatus
+{
+    Pending = 1,
+    Confirmed = 2,
+    Rejected = 3,
+    Cancelled = 4
 }
 
 public enum SeatStatus

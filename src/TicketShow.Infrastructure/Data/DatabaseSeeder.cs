@@ -41,22 +41,98 @@ public static class DatabaseSeeder
             await context.SaveChangesAsync();
         }
 
-        // 2. Seed RBAC (Roles, Permissions, Menus, Mappings)
-        await SeedRbacAsync(context, adminUser, staffUser);
+        User? organizerUser = await context.Users.FirstOrDefaultAsync(u => u.Email == "organizer@ticketshow.vn");
+        if (organizerUser == null)
+        {
+            organizerUser = new User
+            {
+                Email = "organizer@ticketshow.vn",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("OrganizerPassword123@"),
+                FullName = "Ban Tổ Chức Show V-Entertainment",
+                PhoneNumber = "0908777666",
+                Role = UserRole.Organizer,
+                IsActive = true
+            };
+            context.Users.Add(organizerUser);
+            await context.SaveChangesAsync();
+        }
 
-        // 2. Seed Sample Event if no events exist
+        User? venueOwnerUser = await context.Users.FirstOrDefaultAsync(u => u.Email == "venueowner@ticketshow.vn");
+        if (venueOwnerUser == null)
+        {
+            venueOwnerUser = new User
+            {
+                Email = "venueowner@ticketshow.vn",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("VenueOwnerPassword123@"),
+                FullName = "Ban Quản Lý Trung Tâm Hội Nghị Quốc Gia",
+                PhoneNumber = "0903111222",
+                Role = UserRole.VenueOwner,
+                IsActive = true
+            };
+            context.Users.Add(venueOwnerUser);
+            await context.SaveChangesAsync();
+        }
+
+        // 2. Seed RBAC (Roles, Permissions, Menus, Mappings)
+        await SeedRbacAsync(context, adminUser, staffUser, organizerUser, venueOwnerUser);
+
+        // 3. Seed Sample Venue if none exists
+        var sampleVenue = await context.Venues.FirstOrDefaultAsync(v => v.Slug == "trung-tam-hoi-nghi-quoc-gia");
+        if (sampleVenue == null)
+        {
+            sampleVenue = new Venue
+            {
+                OwnerId = venueOwnerUser.Id,
+                Name = "Trung tâm Hội nghị Quốc gia Hà Nội",
+                Slug = "trung-tam-hoi-nghi-quoc-gia",
+                Description = "Hội trường lớn tiêu chuẩn quốc tế, trang thiết bị âm thanh ánh sáng hiện đại bậc nhất Việt Nam.",
+                Address = "Đại lộ Thăng Long, Mễ Trì, Nam Từ Liêm",
+                City = "Hà Nội",
+                ImageUrl = "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&auto=format&fit=crop&q=80",
+                TotalCapacity = 60,
+                Status = VenueStatus.Approved,
+                MasterLayoutJson = """{"rows":["A","B","C","D","E","F"],"seatsPerRow":10,"zones":[{"name":"VIP Zone","rows":["A","B"],"colorHex":"#a855f7"},{"name":"Standard Zone","rows":["C","D","E","F"],"colorHex":"#3b82f6"}]}"""
+            };
+            context.Venues.Add(sampleVenue);
+            await context.SaveChangesAsync();
+        }
+
+        // 4. Seed Sample Venue Booking if none exists
+        var sampleBooking = await context.VenueBookings.FirstOrDefaultAsync(b => b.VenueId == sampleVenue.Id);
+        if (sampleBooking == null)
+        {
+            var now = DateTime.UtcNow;
+            sampleBooking = new VenueBooking
+            {
+                VenueId = sampleVenue.Id,
+                OrganizerId = organizerUser.Id,
+                BookingCode = "VBK-20261031-0001",
+                StartTime = now.AddDays(15),
+                EndTime = now.AddDays(15).AddHours(4),
+                PriceQuote = 50000000,
+                Note = "Thuê địa điểm cho Live Concert Hà Nội - Những Bản Tình Ca Mùa Thu 2026",
+                Status = VenueBookingStatus.Confirmed
+            };
+            context.VenueBookings.Add(sampleBooking);
+            await context.SaveChangesAsync();
+        }
+
+        // 5. Seed Sample Event if no events exist
         if (!await context.Events.AnyAsync())
         {
             var now = DateTime.UtcNow;
             var sampleEvent = new Event
             {
-                OrganizerId = adminUser.Id,
+                OrganizerId = organizerUser.Id,
+                VenueId = sampleVenue.Id,
+                VenueBookingId = sampleBooking.Id,
+                IsSeated = true,
                 Title = "Live Concert Hà Nội - Những Bản Tình Ca Mùa Thu 2026",
                 Slug = "live-concert-ha-noi-2026",
                 Description = "Đêm nhạc đặc biệt quy tụ dàn nghệ sĩ hàng đầu Việt Nam. Trải nghiệm âm thanh vòm đỉnh cao và không gian trình diễn hiện đại bậc nhất.",
                 BannerUrl = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=1200&auto=format&fit=crop&q=80",
-                VenueName = "Trung Tâm Hội Nghị Quốc Gia, Hà Nội",
-                VenueAddress = "Đại lộ Thăng Long, Mễ Trì, Nam Từ Liêm, Hà Nội",
+                VenueName = sampleVenue.Name,
+                VenueAddress = sampleVenue.Address + ", " + sampleVenue.City,
                 StartTime = now.AddDays(15),
                 EndTime = now.AddDays(15).AddHours(3),
                 SalesStartTime = now.AddDays(-1),
@@ -67,7 +143,11 @@ public static class DatabaseSeeder
             context.Events.Add(sampleEvent);
             await context.SaveChangesAsync();
 
-            // 3. Ticket Tiers
+            // Link EventId back to Booking
+            sampleBooking.EventId = sampleEvent.Id;
+            await context.SaveChangesAsync();
+
+            // 6. Ticket Tiers
             var vipTier = new TicketTier
             {
                 EventId = sampleEvent.Id,
@@ -91,7 +171,7 @@ public static class DatabaseSeeder
             context.TicketTiers.AddRange(vipTier, standardTier);
             await context.SaveChangesAsync();
 
-            // 4. Seats (Rows A, B are VIP; C, D, E, F are Standard)
+            // 7. Seats (Rows A, B are VIP; C, D, E, F are Standard)
             var rows = new[] { "A", "B", "C", "D", "E", "F" };
             for (int r = 0; r < rows.Length; r++)
             {
@@ -124,7 +204,12 @@ public static class DatabaseSeeder
         }
     }
 
-    private static async Task SeedRbacAsync(AppDbContext context, User adminUser, User staffUser)
+    private static async Task SeedRbacAsync(
+        AppDbContext context,
+        User adminUser,
+        User staffUser,
+        User organizerUser,
+        User venueOwnerUser)
     {
         // 1. Seed Roles
         var superAdminRole = await context.Roles.FirstOrDefaultAsync(r => r.Code == "SUPER_ADMIN");
@@ -151,6 +236,19 @@ public static class DatabaseSeeder
                 IsSystem = true
             };
             context.Roles.Add(organizerRole);
+        }
+
+        var venueOwnerRole = await context.Roles.FirstOrDefaultAsync(r => r.Code == "VENUE_OWNER");
+        if (venueOwnerRole == null)
+        {
+            venueOwnerRole = new Role
+            {
+                Code = "VENUE_OWNER",
+                Name = "Chủ sở hữu địa điểm",
+                Description = "Quản lý cơ sở mặt bằng, thiết lập sơ đồ ghế chuẩn và phê duyệt yêu cầu thuê",
+                IsSystem = true
+            };
+            context.Roles.Add(venueOwnerRole);
         }
 
         var staffRole = await context.Roles.FirstOrDefaultAsync(r => r.Code == "STAFF");
@@ -191,6 +289,13 @@ public static class DatabaseSeeder
             ("events.close", "Đóng / Mở cổng bán vé show diễn", "Events"),
             ("orders.view", "Xem danh sách đơn đặt vé", "Orders"),
             ("orders.cancel", "Hủy đơn hàng giữ chỗ", "Orders"),
+            ("venues.view", "Xem danh sách cơ sở địa điểm", "Venues"),
+            ("venues.create", "Đăng ký cơ sở địa điểm mới", "Venues"),
+            ("venues.update", "Cập nhật thông tin & layout địa điểm", "Venues"),
+            ("venues.approve", "Kiểm duyệt & kích hoạt địa điểm lên sàn", "Venues"),
+            ("venue_bookings.view", "Xem danh sách yêu cầu thuê địa điểm", "VenueBookings"),
+            ("venue_bookings.create", "Gửi yêu cầu thuê mặt bằng tổ chức show", "VenueBookings"),
+            ("venue_bookings.respond", "Phê duyệt hoặc từ chối cho thuê địa điểm", "VenueBookings"),
             ("checkin.scan", "Quét vé trực tiếp tại cổng", "CheckIn"),
             ("checkin.manifest", "Tải danh sách vé chạy Offline", "CheckIn"),
             ("checkin.sync", "Đồng bộ vé ngoại tuyến lên máy chủ", "CheckIn"),
@@ -221,11 +326,11 @@ public static class DatabaseSeeder
         }
         await context.SaveChangesAsync();
 
-        // 3. Assign Permissions
-        var existingRolePerms = await context.RolePermissions.Where(rp => rp.RoleId == superAdminRole.Id).ToListAsync();
+        // 3. Assign Permissions to Roles
+        var existingAdminPerms = await context.RolePermissions.Where(rp => rp.RoleId == superAdminRole.Id).ToListAsync();
         foreach (var perm in allPermissions)
         {
-            if (!existingRolePerms.Any(rp => rp.PermissionId == perm.Id))
+            if (!existingAdminPerms.Any(rp => rp.PermissionId == perm.Id))
             {
                 context.RolePermissions.Add(new RolePermission
                 {
@@ -235,7 +340,7 @@ public static class DatabaseSeeder
             }
         }
 
-        var organizerCodes = new[] { "dashboard.view", "events.view", "events.create", "events.update", "events.close", "orders.view", "orders.cancel", "checkin.stats" };
+        var organizerCodes = new[] { "dashboard.view", "events.view", "events.create", "events.update", "events.close", "orders.view", "orders.cancel", "venues.view", "venue_bookings.view", "venue_bookings.create", "checkin.stats" };
         var existingOrgPerms = await context.RolePermissions.Where(rp => rp.RoleId == organizerRole.Id).ToListAsync();
         foreach (var perm in allPermissions.Where(p => organizerCodes.Contains(p.Code)))
         {
@@ -244,6 +349,20 @@ public static class DatabaseSeeder
                 context.RolePermissions.Add(new RolePermission
                 {
                     RoleId = organizerRole.Id,
+                    PermissionId = perm.Id
+                });
+            }
+        }
+
+        var venueOwnerCodes = new[] { "dashboard.view", "venues.view", "venues.create", "venues.update", "venue_bookings.view", "venue_bookings.respond" };
+        var existingVenuePerms = await context.RolePermissions.Where(rp => rp.RoleId == venueOwnerRole.Id).ToListAsync();
+        foreach (var perm in allPermissions.Where(p => venueOwnerCodes.Contains(p.Code)))
+        {
+            if (!existingVenuePerms.Any(rp => rp.PermissionId == perm.Id))
+            {
+                context.RolePermissions.Add(new RolePermission
+                {
+                    RoleId = venueOwnerRole.Id,
                     PermissionId = perm.Id
                 });
             }
@@ -271,11 +390,13 @@ public static class DatabaseSeeder
             ("Tổng quan", "/admin", "📊", 1, "dashboard.view"),
             ("Quản lý Show diễn", "/admin/events", "🎪", 2, "events.view"),
             ("Tạo Show diễn mới", "/admin/events/create", "➕", 3, "events.create"),
-            ("Đơn đặt vé", "/admin/orders", "💳", 4, "orders.view"),
-            ("Cổng soát vé QR", "/admin/scanner", "📷", 5, "checkin.scan"),
-            ("Quản lý Tài khoản", "/admin/users", "👥", 6, "users.view"),
-            ("Vai trò & Phân quyền", "/admin/roles", "🛡️", 7, "roles.view"),
-            ("Cấu hình Menu", "/admin/menus", "📑", 8, "menus.view")
+            ("Địa điểm Tổ chức", "/admin/venues", "🏛️", 4, "venues.view"),
+            ("Lịch đặt Địa điểm", "/admin/venue-bookings", "📅", 5, "venue_bookings.view"),
+            ("Đơn đặt vé", "/admin/orders", "💳", 6, "orders.view"),
+            ("Cổng soát vé QR", "/admin/scanner", "📷", 7, "checkin.scan"),
+            ("Quản lý Tài khoản", "/admin/users", "👥", 8, "users.view"),
+            ("Vai trò & Phân quyền", "/admin/roles", "🛡️", 9, "roles.view"),
+            ("Cấu hình Menu", "/admin/menus", "📑", 10, "menus.view")
         };
 
         var allMenus = new List<Menu>();
@@ -313,7 +434,7 @@ public static class DatabaseSeeder
             }
         }
 
-        var orgMenuPaths = new[] { "/admin", "/admin/events", "/admin/events/create", "/admin/orders" };
+        var orgMenuPaths = new[] { "/admin", "/admin/events", "/admin/events/create", "/admin/venues", "/admin/venue-bookings", "/admin/orders" };
         var existingOrgMenus = await context.RoleMenus.Where(rm => rm.RoleId == organizerRole.Id).ToListAsync();
         foreach (var menu in allMenus.Where(m => orgMenuPaths.Contains(m.RoutePath)))
         {
@@ -322,6 +443,20 @@ public static class DatabaseSeeder
                 context.RoleMenus.Add(new RoleMenu
                 {
                     RoleId = organizerRole.Id,
+                    MenuId = menu.Id
+                });
+            }
+        }
+
+        var venueOwnerMenuPaths = new[] { "/admin", "/admin/venues", "/admin/venue-bookings" };
+        var existingVenueMenus = await context.RoleMenus.Where(rm => rm.RoleId == venueOwnerRole.Id).ToListAsync();
+        foreach (var menu in allMenus.Where(m => venueOwnerMenuPaths.Contains(m.RoutePath)))
+        {
+            if (!existingVenueMenus.Any(rm => rm.MenuId == menu.Id))
+            {
+                context.RoleMenus.Add(new RoleMenu
+                {
+                    RoleId = venueOwnerRole.Id,
                     MenuId = menu.Id
                 });
             }
@@ -359,6 +494,26 @@ public static class DatabaseSeeder
             {
                 UserId = staffUser.Id,
                 RoleId = staffRole.Id
+            });
+        }
+
+        var orgUserRole = await context.UserRoles.FirstOrDefaultAsync(ur => ur.UserId == organizerUser.Id && ur.RoleId == organizerRole.Id);
+        if (orgUserRole == null)
+        {
+            context.UserRoles.Add(new UserRoleMapping
+            {
+                UserId = organizerUser.Id,
+                RoleId = organizerRole.Id
+            });
+        }
+
+        var voUserRole = await context.UserRoles.FirstOrDefaultAsync(ur => ur.UserId == venueOwnerUser.Id && ur.RoleId == venueOwnerRole.Id);
+        if (voUserRole == null)
+        {
+            context.UserRoles.Add(new UserRoleMapping
+            {
+                UserId = venueOwnerUser.Id,
+                RoleId = venueOwnerRole.Id
             });
         }
 
