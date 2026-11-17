@@ -18,6 +18,20 @@ public enum EventStatus
     PendingApproval = 5,
     Cancelled = 6
 }
+public enum TicketingMode
+{
+    SeatedOnly = 1,
+    StandingOnly = 2,
+    Hybrid = 3
+}
+public enum VenueType
+{
+    SeatedOnly = 1,
+    StandingOnly = 2,
+    Hybrid = 3
+}
+
+
 
 public enum VenueStatus
 {

@@ -130,6 +130,10 @@ namespace TicketShow.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("status");
 
+                    b.Property<int>("TicketingMode")
+                        .HasColumnType("integer")
+                        .HasColumnName("ticketing_mode");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -272,6 +276,10 @@ namespace TicketShow.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("customer_phone");
 
+                    b.Property<Guid?>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
@@ -294,6 +302,10 @@ namespace TicketShow.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("payment_status");
 
+                    b.Property<string>("ReservedItemsJson")
+                        .HasColumnType("text")
+                        .HasColumnName("reserved_items_json");
+
                     b.Property<decimal>("TotalAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
@@ -309,6 +321,9 @@ namespace TicketShow.Infrastructure.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_orders");
+
+                    b.HasIndex("EventId")
+                        .HasDatabaseName("ix_orders_event_id");
 
                     b.HasIndex("OrderCode")
                         .IsUnique()
@@ -677,9 +692,17 @@ namespace TicketShow.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("event_id");
 
+                    b.Property<int>("HoldQuantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("hold_quantity");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
+
+                    b.Property<bool>("IsStanding")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_standing");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -876,11 +899,19 @@ namespace TicketShow.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("owner_id");
 
+                    b.Property<int>("SeatedCapacity")
+                        .HasColumnType("integer")
+                        .HasColumnName("seated_capacity");
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
                         .HasColumnName("slug");
+
+                    b.Property<int>("StandingCapacity")
+                        .HasColumnType("integer")
+                        .HasColumnName("standing_capacity");
 
                     b.Property<int>("Status")
                         .HasColumnType("integer")
@@ -893,6 +924,10 @@ namespace TicketShow.Infrastructure.Migrations
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
+
+                    b.Property<int>("VenueType")
+                        .HasColumnType("integer")
+                        .HasColumnName("venue_type");
 
                     b.HasKey("Id")
                         .HasName("pk_venues");
@@ -1053,7 +1088,15 @@ namespace TicketShow.Infrastructure.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_orders_users_customer_id");
 
+                    b.HasOne("TicketShow.Domain.Entities.Event", "Event")
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_orders_events_event_id");
+
                     b.Navigation("Customer");
+
+                    b.Navigation("Event");
                 });
 
             modelBuilder.Entity("TicketShow.Domain.Entities.RoleMenu", b =>

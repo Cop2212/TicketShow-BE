@@ -1,8 +1,10 @@
+using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TicketShow.Application.Common.Exceptions;
 using TicketShow.Application.Common.Interfaces;
 using TicketShow.Application.Common.Models;
+using TicketShow.Application.Features.Orders.Commands;
 using TicketShow.Domain.Entities;
 using TicketShow.Domain.Enums;
 
@@ -114,6 +116,36 @@ public class PaymentWebhookCommandHandler : IRequestHandler<PaymentWebhookComman
                 await _lockService.ReleaseSeatLockAsync(seat.EventId, seat.Id, order.OrderCode);
             }
 
+            // Revert standing ticket holds
+            if (!string.IsNullOrWhiteSpace(order.ReservedItemsJson))
+            {
+                try
+                {
+                    var standingHolds = JsonSerializer.Deserialize<List<StandingHoldSnapshot>>(order.ReservedItemsJson, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+
+                    if (standingHolds != null && standingHolds.Count > 0)
+                    {
+                        var tierIds = standingHolds.Select(h => h.TierId).Distinct().ToList();
+                        var tiers = await _context.TicketTiers.Where(t => tierIds.Contains(t.Id)).ToListAsync(cancellationToken);
+                        foreach (var hold in standingHolds)
+                        {
+                            var tier = tiers.FirstOrDefault(t => t.Id == hold.TierId);
+                            if (tier != null)
+                            {
+                                tier.HoldQuantity = Math.Max(0, tier.HoldQuantity - hold.Quantity);
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+
             await _context.SaveChangesAsync(cancellationToken);
 
             return ApiResponse<PaymentProcessResultDto>.Ok(
@@ -122,103 +154,169 @@ public class PaymentWebhookCommandHandler : IRequestHandler<PaymentWebhookComman
             );
         }
 
-        // Process successful payment
-        order.PaymentStatus = PaymentStatus.Paid;
-        order.TransactionId = string.IsNullOrWhiteSpace(request.TransactionId) ? $"TXN-{DateTime.UtcNow:yyyyMMddHHmmss}" : request.TransactionId;
-        order.PaymentGateway = request.PaymentGateway ?? "QRPAY";
-
-        // Find locked seats for this order session
-        var lockedSeats = await _context.Seats
-            .Include(s => s.TicketTier)
-            .Include(s => s.Event)
-            .Where(s => s.LockedBySessionId == order.OrderCode)
-            .ToListAsync(cancellationToken);
-
-        var generatedTickets = new List<GeneratedTicketDto>();
-
-        foreach (var seat in lockedSeats)
+        // Process successful payment inside transaction
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
         {
-            seat.Status = SeatStatus.Sold;
-            seat.LockedUntil = null;
+            order.PaymentStatus = PaymentStatus.Paid;
+            order.TransactionId = string.IsNullOrWhiteSpace(request.TransactionId) ? $"TXN-{DateTime.UtcNow:yyyyMMddHHmmss}" : request.TransactionId;
+            order.PaymentGateway = request.PaymentGateway ?? "QRPAY";
 
-            var ticketCode = $"TICK-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Random.Shared.Next(100, 999)}";
-            var qrSignedData = _qrService.GenerateQRSignedData(ticketCode, seat.EventId, order.CustomerEmail);
+            // Find locked seats for this order session
+            var lockedSeats = await _context.Seats
+                .Include(s => s.TicketTier)
+                .Include(s => s.Event)
+                .Where(s => s.LockedBySessionId == order.OrderCode)
+                .ToListAsync(cancellationToken);
 
-            var ticket = new Ticket
+            var generatedTickets = new List<GeneratedTicketDto>();
+
+            foreach (var seat in lockedSeats)
             {
-                OrderId = order.Id,
-                EventId = seat.EventId,
-                TicketTierId = seat.TicketTierId,
-                SeatId = seat.Id,
-                TicketCode = ticketCode,
-                QrCodeSignature = qrSignedData,
-                Status = TicketStatus.Valid
-            };
+                seat.Status = SeatStatus.Sold;
+                seat.LockedUntil = null;
 
-            _context.Tickets.Add(ticket);
+                var ticketCode = $"TICK-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Random.Shared.Next(100, 999)}";
+                var qrSignedData = _qrService.GenerateQRSignedData(ticketCode, seat.EventId, order.CustomerEmail);
 
-            if (seat.TicketTier != null)
-            {
-                seat.TicketTier.SoldQuantity += 1;
+                var ticket = new Ticket
+                {
+                    OrderId = order.Id,
+                    EventId = seat.EventId,
+                    TicketTierId = seat.TicketTierId,
+                    SeatId = seat.Id,
+                    TicketCode = ticketCode,
+                    QrCodeSignature = qrSignedData,
+                    Status = TicketStatus.Valid
+                };
+
+                _context.Tickets.Add(ticket);
+
+                if (seat.TicketTier != null)
+                {
+                    seat.TicketTier.SoldQuantity += 1;
+                }
+
+                // Generate Base64 QR image
+                var qrBase64 = _qrService.GenerateQrBase64Image(qrSignedData);
+
+                generatedTickets.Add(new GeneratedTicketDto(
+                    ticket.Id,
+                    ticket.TicketCode,
+                    seat.TicketTier?.Name ?? "General",
+                    $"{seat.RowName}{seat.SeatNumber}",
+                    qrSignedData,
+                    qrBase64
+                ));
             }
 
-            // Generate Base64 QR image
-            var qrBase64 = _qrService.GenerateQrBase64Image(qrSignedData);
+            // Process standing tickets from order.ReservedItemsJson (General Admission)
+            if (!string.IsNullOrWhiteSpace(order.ReservedItemsJson))
+            {
+                var standingHolds = JsonSerializer.Deserialize<List<StandingHoldSnapshot>>(order.ReservedItemsJson, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
 
-            generatedTickets.Add(new GeneratedTicketDto(
-                ticket.Id,
-                ticket.TicketCode,
-                seat.TicketTier?.Name ?? "General",
-                $"{seat.RowName}{seat.SeatNumber}",
-                qrSignedData,
-                qrBase64
-            ));
+                if (standingHolds != null)
+                {
+                    var eventId = order.EventId ?? lockedSeats.FirstOrDefault()?.EventId ?? Guid.Empty;
+                    var tierIds = standingHolds.Select(h => h.TierId).Distinct().ToList();
+                    var tiers = await _context.TicketTiers.Where(t => tierIds.Contains(t.Id)).ToListAsync(cancellationToken);
+
+                    foreach (var hold in standingHolds)
+                    {
+                        var tier = tiers.FirstOrDefault(t => t.Id == hold.TierId);
+                        if (tier != null)
+                        {
+                            // Chuyển từ HoldQuantity sang SoldQuantity
+                            tier.HoldQuantity = Math.Max(0, tier.HoldQuantity - hold.Quantity);
+                            tier.SoldQuantity += hold.Quantity;
+                        }
+
+                        for (int q = 0; q < hold.Quantity; q++)
+                        {
+                            var ticketCode = $"TICK-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}-{Random.Shared.Next(100, 999)}";
+                            var qrSignedData = _qrService.GenerateQRSignedData(ticketCode, eventId, order.CustomerEmail);
+
+                            var ticket = new Ticket
+                            {
+                                OrderId = order.Id,
+                                EventId = eventId,
+                                TicketTierId = hold.TierId,
+                                SeatId = null,
+                                TicketCode = ticketCode,
+                                QrCodeSignature = qrSignedData,
+                                Status = TicketStatus.Valid
+                            };
+
+                            _context.Tickets.Add(ticket);
+
+                            var qrBase64 = _qrService.GenerateQrBase64Image(qrSignedData);
+                            generatedTickets.Add(new GeneratedTicketDto(
+                                ticket.Id,
+                                ticket.TicketCode,
+                                hold.TierName,
+                                "GA",
+                                qrSignedData,
+                                qrBase64
+                            ));
+                        }
+                    }
+                }
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            // Release Redis locks since seats are now marked Sold permanently in SQL
+            foreach (var seat in lockedSeats)
+            {
+                await _lockService.ReleaseSeatLockAsync(seat.EventId, seat.Id, order.OrderCode);
+            }
+
+            // Resolve event details for email
+            var ev = (order.EventId.HasValue ? await _context.Events.FindAsync(new object[] { order.EventId.Value }, cancellationToken) : null)
+                     ?? lockedSeats.FirstOrDefault()?.Event;
+            var eventTitle = ev?.Title ?? "TicketShow Event";
+            var venueName = ev?.VenueName ?? "Venue";
+            var startTime = ev?.StartTime ?? DateTime.UtcNow;
+
+            var ticketEmailItems = generatedTickets.Select(t => (
+                TicketCode: t.TicketCode,
+                TierName: t.TierName,
+                SeatLabel: t.SeatLabel,
+                QrBase64: t.QrCodeBase64Image
+            )).ToList();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _emailService.SendETicketEmailAsync(
+                        order.CustomerEmail,
+                        order.CustomerName,
+                        order.OrderCode,
+                        eventTitle,
+                        venueName,
+                        startTime,
+                        ticketEmailItems
+                    );
+                }
+                catch
+                {
+                    // Best-effort email delivery
+                }
+            });
+
+            return ApiResponse<PaymentProcessResultDto>.Ok(
+                new PaymentProcessResultDto(order.OrderCode, "PAID", order.TransactionId, generatedTickets),
+                "Xử lý thanh toán thành công và đã xuất E-ticket gắn mã QR bảo mật gửi qua Email."
+            );
         }
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        // Release Redis locks since seats are now marked Sold permanently in SQL
-        foreach (var seat in lockedSeats)
+        catch
         {
-            await _lockService.ReleaseSeatLockAsync(seat.EventId, seat.Id, order.OrderCode);
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
         }
-
-        // Send E-ticket Email to customer
-        var firstSeat = lockedSeats.FirstOrDefault();
-        var eventTitle = firstSeat?.Event?.Title ?? "TicketShow Event";
-        var venueName = firstSeat?.Event?.VenueName ?? "Venue";
-        var startTime = firstSeat?.Event?.StartTime ?? DateTime.UtcNow;
-
-        var ticketEmailItems = generatedTickets.Select(t => (
-            TicketCode: t.TicketCode,
-            TierName: t.TierName,
-            SeatLabel: t.SeatLabel,
-            QrBase64: t.QrCodeBase64Image
-        )).ToList();
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await _emailService.SendETicketEmailAsync(
-                    order.CustomerEmail,
-                    order.CustomerName,
-                    order.OrderCode,
-                    eventTitle,
-                    venueName,
-                    startTime,
-                    ticketEmailItems
-                );
-            }
-            catch
-            {
-                // Best-effort email delivery
-            }
-        });
-
-        return ApiResponse<PaymentProcessResultDto>.Ok(
-            new PaymentProcessResultDto(order.OrderCode, "PAID", order.TransactionId, generatedTickets),
-            "Xử lý thanh toán thành công và đã xuất E-ticket gắn mã QR bảo mật gửi qua Email."
-        );
     }
 }

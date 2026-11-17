@@ -15,7 +15,8 @@ public record TicketTierDto(
     decimal Price,
     int TotalQuantity,
     int SoldQuantity,
-    string ColorHex
+    string ColorHex,
+    bool IsStanding = false
 );
 
 public record SeatDto(
@@ -46,6 +47,7 @@ public record EventSummaryDto(
     Guid? VenueId = null,
     Guid? VenueBookingId = null,
     bool IsSeated = true,
+    TicketingMode TicketingMode = TicketingMode.SeatedOnly,
     Guid OrganizerId = default,
     string OrganizerName = "N/A"
 );
@@ -68,6 +70,7 @@ public record EventDetailDto(
     Guid? VenueId = null,
     Guid? VenueBookingId = null,
     bool IsSeated = true,
+    TicketingMode TicketingMode = TicketingMode.SeatedOnly,
     Guid OrganizerId = default,
     string OrganizerName = "N/A"
 );
@@ -76,7 +79,8 @@ public record CreateTicketTierInput(
     string Name,
     decimal Price,
     int TotalQuantity,
-    string ColorHex
+    string ColorHex,
+    bool IsStanding = false
 );
 
 public record ZonePricingInput(
@@ -102,6 +106,7 @@ public record CreateEventCommand : IRequest<ApiResponse<EventDetailDto>>
     public Guid? VenueId { get; init; }
     public Guid? VenueBookingId { get; init; }
     public bool IsSeated { get; init; } = true;
+    public TicketingMode TicketingMode { get; init; } = TicketingMode.SeatedOnly;
     public EventStatus InitialStatus { get; init; } = EventStatus.Published;
 }
 
@@ -114,6 +119,7 @@ public record CreateEventFromBookingCommand : IRequest<ApiResponse<EventDetailDt
     public DateTime SalesStartTime { get; init; }
     public DateTime SalesEndTime { get; init; }
     public List<ZonePricingInput> ZonePricings { get; init; } = new();
+    public TicketingMode TicketingMode { get; init; } = TicketingMode.SeatedOnly;
     public bool SubmitForApproval { get; init; } = false;
 }
 

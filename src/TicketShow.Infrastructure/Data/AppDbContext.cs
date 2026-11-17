@@ -160,6 +160,11 @@ public class AppDbContext : DbContext, IAppDbContext
                 .WithMany(u => u.Orders)
                 .HasForeignKey(o => o.CustomerId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(o => o.Event)
+                .WithMany()
+                .HasForeignKey(o => o.EventId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         // Ticket

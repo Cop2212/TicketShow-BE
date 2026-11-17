@@ -75,7 +75,10 @@ public class VenueHandlers :
                 v.TotalCapacity,
                 v.Status,
                 v.OwnerId,
-                v.Owner != null ? v.Owner.FullName : "N/A"
+                v.Owner != null ? v.Owner.FullName : "N/A",
+                v.VenueType,
+                v.SeatedCapacity,
+                v.StandingCapacity
             ))
             .ToListAsync(cancellationToken);
 
@@ -106,7 +109,10 @@ public class VenueHandlers :
             v.MasterLayoutJson,
             v.Status,
             v.OwnerId,
-            v.Owner != null ? v.Owner.FullName : "N/A"
+            v.Owner != null ? v.Owner.FullName : "N/A",
+            v.VenueType,
+            v.SeatedCapacity,
+            v.StandingCapacity
         );
 
         return ApiResponse<VenueDetailDto>.Ok(dto, "Lấy chi tiết địa điểm thành công.");
@@ -129,6 +135,10 @@ public class VenueHandlers :
             slug = $"{baseSlug}-{count++}";
         }
 
+        int seated = request.VenueType == VenueType.StandingOnly ? 0 : request.SeatedCapacity;
+        int standing = request.VenueType == VenueType.SeatedOnly ? 0 : request.StandingCapacity;
+        int total = seated + standing > 0 ? seated + standing : request.TotalCapacity;
+
         var venue = new Venue
         {
             OwnerId = ownerId.Value,
@@ -138,7 +148,10 @@ public class VenueHandlers :
             Address = request.Address.Trim(),
             City = request.City.Trim(),
             ImageUrl = request.ImageUrl?.Trim(),
-            TotalCapacity = request.TotalCapacity,
+            VenueType = request.VenueType,
+            SeatedCapacity = seated,
+            StandingCapacity = standing,
+            TotalCapacity = total,
             MasterLayoutJson = string.IsNullOrWhiteSpace(request.MasterLayoutJson) ? "{}" : request.MasterLayoutJson,
             Status = VenueStatus.PendingApproval
         };
@@ -160,12 +173,14 @@ public class VenueHandlers :
         venue.Address = request.Address.Trim();
         venue.City = request.City.Trim();
         venue.ImageUrl = request.ImageUrl?.Trim();
-        venue.TotalCapacity = request.TotalCapacity;
+        venue.VenueType = request.VenueType;
+        venue.SeatedCapacity = request.SeatedCapacity;
+        venue.StandingCapacity = request.StandingCapacity;
+        venue.TotalCapacity = request.SeatedCapacity + request.StandingCapacity > 0 ? request.SeatedCapacity + request.StandingCapacity : request.TotalCapacity;
         if (!string.IsNullOrWhiteSpace(request.MasterLayoutJson))
         {
             venue.MasterLayoutJson = request.MasterLayoutJson;
         }
-
         await _context.SaveChangesAsync(cancellationToken);
 
         return await Handle(new GetVenueDetailQuery(venue.Id.ToString()), cancellationToken);

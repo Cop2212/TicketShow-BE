@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using TicketShow.Domain.Entities;
 
 namespace TicketShow.Application.Common.Interfaces;
 
 public interface IAppDbContext
 {
+    DatabaseFacade Database { get; }
     DbSet<User> Users { get; }
     DbSet<Event> Events { get; }
     DbSet<TicketTier> TicketTiers { get; }

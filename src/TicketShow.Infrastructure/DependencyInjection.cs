@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddSingleton<IQrSignatureService, QrSignatureService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddHostedService<EventSalesAutoCloserWorker>();
+        services.AddHostedService<TicketShow.Infrastructure.BackgroundServices.SeatHoldExpirationWorker>();
 
         // JWT Authentication
         var jwtSection = configuration.GetSection(JwtSettings.SectionName);

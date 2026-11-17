@@ -16,7 +16,10 @@ public record VenueSummaryDto(
     int TotalCapacity,
     VenueStatus Status,
     Guid OwnerId,
-    string OwnerName
+    string OwnerName,
+    VenueType VenueType = VenueType.SeatedOnly,
+    int SeatedCapacity = 0,
+    int StandingCapacity = 0
 );
 
 public record VenueDetailDto(
@@ -31,7 +34,10 @@ public record VenueDetailDto(
     string MasterLayoutJson,
     VenueStatus Status,
     Guid OwnerId,
-    string OwnerName
+    string OwnerName,
+    VenueType VenueType = VenueType.SeatedOnly,
+    int SeatedCapacity = 0,
+    int StandingCapacity = 0
 );
 
 public record CreateVenueCommand : IRequest<ApiResponse<VenueDetailDto>>
@@ -41,6 +47,9 @@ public record CreateVenueCommand : IRequest<ApiResponse<VenueDetailDto>>
     public string Address { get; init; } = string.Empty;
     public string City { get; init; } = string.Empty;
     public string? ImageUrl { get; init; }
+    public VenueType VenueType { get; init; } = VenueType.SeatedOnly;
+    public int SeatedCapacity { get; init; }
+    public int StandingCapacity { get; init; }
     public int TotalCapacity { get; init; }
     public string MasterLayoutJson { get; init; } = "{}";
 }
@@ -65,6 +74,9 @@ public record UpdateVenueCommand : IRequest<ApiResponse<VenueDetailDto>>
     public string Address { get; init; } = string.Empty;
     public string City { get; init; } = string.Empty;
     public string? ImageUrl { get; init; }
+    public VenueType VenueType { get; init; } = VenueType.SeatedOnly;
+    public int SeatedCapacity { get; init; }
+    public int StandingCapacity { get; init; }
     public int TotalCapacity { get; init; }
     public string MasterLayoutJson { get; init; } = "{}";
 }

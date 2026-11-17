@@ -19,7 +19,7 @@ public class Event : BaseEntity
     public VenueBooking? VenueBooking { get; set; }
 
     public bool IsSeated { get; set; } = true;
-
+    public TicketingMode TicketingMode { get; set; } = TicketingMode.SeatedOnly;
     public string VenueName { get; set; } = string.Empty;
     public string? VenueAddress { get; set; }
 
@@ -44,8 +44,9 @@ public class TicketTier : BaseEntity
     public decimal Price { get; set; }
     public int TotalQuantity { get; set; }
     public int SoldQuantity { get; set; } = 0;
+    public int HoldQuantity { get; set; } = 0;
     public string ColorHex { get; set; } = "#8b5cf6"; // For SVG Seat map rendering
-
+    public bool IsStanding { get; set; } = false;
     public uint Version { get; set; } // Concurrency token xmin
 
     public ICollection<Seat> Seats { get; set; } = new List<Seat>();
@@ -86,7 +87,9 @@ public class Order : BaseEntity
     public string? PaymentGateway { get; set; } // VNPAY, MOMO, QRPAY
     public string? TransactionId { get; set; }
     public DateTime ExpiresAt { get; set; }
-
+    public Guid? EventId { get; set; }
+    public Event? Event { get; set; }
+    public string? ReservedItemsJson { get; set; }
     public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
 }
 

@@ -15,6 +15,9 @@ public class Venue : BaseEntity
     public string City { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
 
+    public VenueType VenueType { get; set; } = VenueType.SeatedOnly;
+    public int SeatedCapacity { get; set; } = 0;
+    public int StandingCapacity { get; set; } = 0;
     public int TotalCapacity { get; set; }
 
     /// <summary>

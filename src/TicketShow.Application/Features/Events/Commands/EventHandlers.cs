@@ -69,10 +69,11 @@ public class EventHandlers :
                 e.SalesStartTime,
                 e.SalesEndTime,
                 e.Status,
-                e.TicketTiers.Select(t => new TicketTierDto(t.Id, t.Name, t.Price, t.TotalQuantity, t.SoldQuantity, t.ColorHex)).ToList(),
+                e.TicketTiers.Select(t => new TicketTierDto(t.Id, t.Name, t.Price, t.TotalQuantity, t.SoldQuantity, t.ColorHex, t.IsStanding)).ToList(),
                 e.VenueId,
                 e.VenueBookingId,
                 e.IsSeated,
+                e.TicketingMode,
                 e.OrganizerId,
                 e.Organizer != null ? e.Organizer.FullName : "N/A"
             ))
@@ -131,11 +132,12 @@ public class EventHandlers :
             ev.SalesStartTime,
             ev.SalesEndTime,
             ev.Status,
-            ev.TicketTiers.Select(t => new TicketTierDto(t.Id, t.Name, t.Price, t.TotalQuantity, t.SoldQuantity, t.ColorHex)).ToList(),
+            ev.TicketTiers.Select(t => new TicketTierDto(t.Id, t.Name, t.Price, t.TotalQuantity, t.SoldQuantity, t.ColorHex, t.IsStanding)).ToList(),
             seatDtos,
             ev.VenueId,
             ev.VenueBookingId,
             ev.IsSeated,
+            ev.TicketingMode,
             ev.OrganizerId,
             ev.Organizer != null ? ev.Organizer.FullName : "N/A"
         );
@@ -151,6 +153,40 @@ public class EventHandlers :
             var defaultUser = await _context.Users.FirstOrDefaultAsync(u => u.Role == UserRole.Organizer || u.Role == UserRole.Admin, cancellationToken);
             organizerId = defaultUser?.Id ?? Guid.NewGuid();
         }
+        // Ceiling Guard & Venue Type Compatibility Validation
+        if (request.VenueId.HasValue)
+        {
+            var venue = await _context.Venues.FirstOrDefaultAsync(v => v.Id == request.VenueId.Value, cancellationToken);
+            if (venue != null)
+            {
+                if (venue.VenueType == VenueType.SeatedOnly && request.TicketingMode != TicketingMode.SeatedOnly)
+                {
+                    throw new AppException($"Địa điểm '{venue.Name}' là cơ sở thuần ghế ngồi, không hỗ trợ tổ chức show có vé đứng.", 400);
+                }
+                if (venue.VenueType == VenueType.StandingOnly && request.TicketingMode != TicketingMode.StandingOnly)
+                {
+                    throw new AppException($"Địa điểm '{venue.Name}' là khu vực thuần vé đứng ngoài trời, không hỗ trợ tổ chức show có ghế ngồi.", 400);
+                }
+
+                int totalStandingRequested = request.TicketTiers
+                    .Where(t => t.IsStanding || request.TicketingMode == TicketingMode.StandingOnly)
+                    .Sum(t => t.TotalQuantity);
+
+                if (venue.StandingCapacity > 0 && totalStandingRequested > venue.StandingCapacity)
+                {
+                    throw new AppException($"Tổng số vé đứng phát hành ({totalStandingRequested:N0} vé) vượt quá hạn mức tối đa cho phép của địa điểm ({venue.StandingCapacity:N0} vé).", 400);
+                }
+
+                int totalSeatedRequested = request.TicketTiers
+                    .Where(t => !t.IsStanding && request.TicketingMode != TicketingMode.StandingOnly)
+                    .Sum(t => t.TotalQuantity);
+
+                if (venue.SeatedCapacity > 0 && totalSeatedRequested > venue.SeatedCapacity)
+                {
+                    throw new AppException($"Tổng số ghế phát hành ({totalSeatedRequested:N0} ghế) vượt quá số ghế thiết kế của địa điểm ({venue.SeatedCapacity:N0} ghế).", 400);
+                }
+            }
+        }
 
         var baseSlug = GenerateSlug(request.Title);
         var slug = baseSlug;
@@ -165,7 +201,8 @@ public class EventHandlers :
             OrganizerId = organizerId.Value,
             VenueId = request.VenueId,
             VenueBookingId = request.VenueBookingId,
-            IsSeated = request.IsSeated,
+            IsSeated = request.TicketingMode != TicketingMode.StandingOnly,
+            TicketingMode = request.TicketingMode,
             Title = request.Title.Trim(),
             Slug = slug,
             Description = request.Description,
@@ -191,46 +228,93 @@ public class EventHandlers :
                 Price = tierInput.Price,
                 TotalQuantity = tierInput.TotalQuantity,
                 SoldQuantity = 0,
-                ColorHex = string.IsNullOrWhiteSpace(tierInput.ColorHex) ? "#8b5cf6" : tierInput.ColorHex
+                ColorHex = string.IsNullOrWhiteSpace(tierInput.ColorHex) ? "#8b5cf6" : tierInput.ColorHex,
+                IsStanding = tierInput.IsStanding || request.TicketingMode == TicketingMode.StandingOnly
             });
         }
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        // Generate Seat map if requested
-        if (request.IsSeated && request.GenerateRowsCount.HasValue && request.GenerateRowsCount > 0 &&
-            request.GenerateSeatsPerRow.HasValue && request.GenerateSeatsPerRow > 0)
+        // Generate Seat map ONLY if not StandingOnly
+        if (request.TicketingMode != TicketingMode.StandingOnly && request.IsSeated)
         {
-            var tiers = ev.TicketTiers.ToList();
-            var primaryTier = tiers.First();
-            var secondaryTier = tiers.Count > 1 ? tiers[1] : primaryTier;
-
-            var rows = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            var rowCount = Math.Min(request.GenerateRowsCount.Value, 10);
-            var seatsPerRow = Math.Min(request.GenerateSeatsPerRow.Value, 20);
-
-            for (int r = 0; r < rowCount; r++)
+            bool layoutGenerated = false;
+            // Try inheriting exact seat matrix from Venue if available
+            if (request.VenueId.HasValue)
             {
-                var rowName = rows[r].ToString();
-                var assignedTier = (r < 2 && tiers.Count > 1) ? primaryTier : secondaryTier;
-
-                for (int s = 1; s <= seatsPerRow; s++)
+                var venue = await _context.Venues.FirstOrDefaultAsync(v => v.Id == request.VenueId.Value, cancellationToken);
+                if (venue != null && !string.IsNullOrWhiteSpace(venue.MasterLayoutJson))
                 {
-                    var seatNumber = s.ToString("D2");
-                    _context.Seats.Add(new Seat
+                    try
                     {
-                        EventId = ev.Id,
-                        TicketTierId = assignedTier.Id,
-                        RowName = rowName,
-                        SeatNumber = seatNumber,
-                        Status = SeatStatus.Available
-                    });
+                        var layout = JsonSerializer.Deserialize<VenueLayoutModel>(venue.MasterLayoutJson, new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true
+                        });
+
+                        if (layout?.Seats != null && layout.Seats.Count > 0)
+                        {
+                            var validSeats = layout.Seats.Where(s => !s.Zone.Equals("Space", StringComparison.OrdinalIgnoreCase)).ToList();
+                            var tierMap = ev.TicketTiers.ToDictionary(t => t.Name.ToLower().Trim(), t => t);
+
+                            foreach (var s in validSeats)
+                            {
+                                tierMap.TryGetValue(s.Zone.ToLower().Trim(), out var assignedTier);
+                                var targetTier = assignedTier ?? ev.TicketTiers.First();
+
+                                _context.Seats.Add(new Seat
+                                {
+                                    EventId = ev.Id,
+                                    TicketTierId = targetTier.Id,
+                                    RowName = s.Row,
+                                    SeatNumber = s.Number,
+                                    Status = SeatStatus.Available
+                                });
+                            }
+
+                            await _context.SaveChangesAsync(cancellationToken);
+                            layoutGenerated = true;
+                        }
+                    }
+                    catch
+                    {
+                        // fallback to standard generation
+                    }
                 }
             }
 
-            await _context.SaveChangesAsync(cancellationToken);
-        }
+            if (!layoutGenerated && request.GenerateRowsCount.HasValue && request.GenerateRowsCount > 0 &&
+                request.GenerateSeatsPerRow.HasValue && request.GenerateSeatsPerRow > 0)
+            {
+                var tiers = ev.TicketTiers.ToList();
+                var primaryTier = tiers.First();
+                var secondaryTier = tiers.Count > 1 ? tiers[1] : primaryTier;
 
+                var rows = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                var rowCount = Math.Min(request.GenerateRowsCount.Value, 10);
+                var seatsPerRow = Math.Min(request.GenerateSeatsPerRow.Value, 20);
+
+                for (int r = 0; r < rowCount; r++)
+                {
+                    var rowName = rows[r].ToString();
+                    var assignedTier = (r < 2 && tiers.Count > 1) ? primaryTier : secondaryTier;
+
+                    for (int s = 1; s <= seatsPerRow; s++)
+                    {
+                        _context.Seats.Add(new Seat
+                        {
+                            EventId = ev.Id,
+                            TicketTierId = assignedTier.Id,
+                            RowName = rowName,
+                            SeatNumber = s.ToString("D2"),
+                            Status = SeatStatus.Available
+                        });
+                    }
+                }
+
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+        }
         return await Handle(new GetEventDetailQuery(ev.Id.ToString()), cancellationToken);
     }
 
@@ -264,8 +348,8 @@ public class EventHandlers :
             OrganizerId = booking.OrganizerId,
             VenueId = venue.Id,
             VenueBookingId = booking.Id,
-            IsSeated = true,
-            Title = request.Title.Trim(),
+            IsSeated = request.TicketingMode != TicketingMode.StandingOnly,
+            TicketingMode = request.TicketingMode,
             Slug = slug,
             Description = request.Description?.Trim(),
             BannerUrl = request.BannerUrl?.Trim(),
@@ -292,7 +376,47 @@ public class EventHandlers :
                 PropertyNameCaseInsensitive = true
             });
 
-            if (layout != null && layout.Zones != null && layout.Zones.Count > 0)
+            if (layout != null && layout.Seats != null && layout.Seats.Count > 0)
+            {
+                var validSeats = layout.Seats.Where(s => !s.Zone.Equals("Space", StringComparison.OrdinalIgnoreCase)).ToList();
+                var pricingMap = request.ZonePricings.ToDictionary(z => z.ZoneName.ToLower().Trim(), z => z);
+                var groups = validSeats.GroupBy(s => s.Zone).ToList();
+
+                foreach (var group in groups)
+                {
+                    pricingMap.TryGetValue(group.Key.ToLower().Trim(), out var customPricing);
+                    var price = customPricing?.Price ?? 500000m;
+                    var color = !string.IsNullOrWhiteSpace(customPricing?.ColorHex) ? customPricing.ColorHex : "#8b5cf6";
+
+                    var tier = new TicketTier
+                    {
+                        EventId = ev.Id,
+                        Name = group.Key,
+                        Price = price,
+                        TotalQuantity = group.Count(),
+                        SoldQuantity = 0,
+                        ColorHex = color
+                    };
+
+                    _context.TicketTiers.Add(tier);
+                    await _context.SaveChangesAsync(cancellationToken);
+
+                    foreach (var s in group)
+                    {
+                        _context.Seats.Add(new Seat
+                        {
+                            EventId = ev.Id,
+                            TicketTierId = tier.Id,
+                            RowName = s.Row,
+                            SeatNumber = s.Number,
+                            Status = SeatStatus.Available
+                        });
+                    }
+                }
+
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            else if (layout != null && layout.Zones != null && layout.Zones.Count > 0)
             {
                 var seatsPerRow = layout.SeatsPerRow > 0 ? layout.SeatsPerRow : 10;
                 var pricingMap = request.ZonePricings.ToDictionary(z => z.ZoneName.ToLower().Trim(), z => z);
@@ -423,6 +547,15 @@ public class EventHandlers :
         public List<string> Rows { get; set; } = new();
         public int SeatsPerRow { get; set; }
         public List<VenueZoneModel> Zones { get; set; } = new();
+        public List<VenueSeatItemModel> Seats { get; set; } = new();
+    }
+
+    private class VenueSeatItemModel
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Row { get; set; } = string.Empty;
+        public string Number { get; set; } = string.Empty;
+        public string Zone { get; set; } = string.Empty;
     }
 
     private class VenueZoneModel

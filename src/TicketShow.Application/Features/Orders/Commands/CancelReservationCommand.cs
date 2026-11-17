@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TicketShow.Application.Common.Exceptions;
@@ -26,12 +27,23 @@ public class CancelReservationCommandHandler : IRequestHandler<CancelReservation
             .FirstOrDefaultAsync(o => o.OrderCode == request.OrderCode, cancellationToken);
 
         if (order == null)
+        {
             throw new NotFoundException("Đơn hàng", request.OrderCode);
+        }
 
         if (order.PaymentStatus == PaymentStatus.Paid)
-            throw new AppException("Đơn hàng đã thanh toán thành công, không thể hủy giữ chỗ.", 400);
+        {
+            throw new AppException("Đơn hàng này đã được thanh toán thành công, không thể hủy giữ chỗ.", 400);
+        }
 
-        // Find all seats locked by this order
+        if (order.PaymentStatus == PaymentStatus.Failed)
+        {
+            return ApiResponse<bool>.Ok(true, "Đơn hàng đã được giải phóng trước đó.");
+        }
+
+        order.PaymentStatus = PaymentStatus.Failed;
+
+        // 1. Giải phóng ghế ngồi (Seated)
         var lockedSeats = await _context.Seats
             .Where(s => s.LockedBySessionId == order.OrderCode && s.Status == SeatStatus.Locked)
             .ToListAsync(cancellationToken);
@@ -44,9 +56,41 @@ public class CancelReservationCommandHandler : IRequestHandler<CancelReservation
             await _lockService.ReleaseSeatLockAsync(seat.EventId, seat.Id, order.OrderCode);
         }
 
-        order.PaymentStatus = PaymentStatus.Failed;
+        // 2. Hoàn trả số lượng vé đứng đã giữ chỗ (Standing / General Admission)
+        if (!string.IsNullOrWhiteSpace(order.ReservedItemsJson))
+        {
+            try
+            {
+                var standingHolds = JsonSerializer.Deserialize<List<StandingHoldSnapshot>>(order.ReservedItemsJson, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (standingHolds != null && standingHolds.Count > 0)
+                {
+                    var tierIds = standingHolds.Select(h => h.TierId).Distinct().ToList();
+                    var tiers = await _context.TicketTiers
+                        .Where(t => tierIds.Contains(t.Id))
+                        .ToListAsync(cancellationToken);
+
+                    foreach (var hold in standingHolds)
+                    {
+                        var tier = tiers.FirstOrDefault(t => t.Id == hold.TierId);
+                        if (tier != null)
+                        {
+                            tier.HoldQuantity = Math.Max(0, tier.HoldQuantity - hold.Quantity);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore parse errors on cancel
+            }
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
 
-        return ApiResponse<bool>.Ok(true, "Đã hủy giữ chỗ và giải phóng ghế thành công.");
+        return ApiResponse<bool>.Ok(true, "Đã hủy giữ chỗ thành công và giải phóng toàn bộ vị trí cho người khác.");
     }
 }
